@@ -1,0 +1,140 @@
+import { ChangeEvent, useRef, useState } from "react";
+import { api, ApiError } from "../api/client";
+
+type DraftPatch = Partial<{
+  title: string;
+  code: string;
+  start: string;
+  end: string;
+}>;
+
+type Props = {
+  title: string;
+  code: string;
+  start: string;
+  end: string;
+  onChange: (patch: DraftPatch) => void;
+  onSubmitted: (hash: string, title: string) => void;
+};
+
+export default function NewSubmission({
+  title,
+  code,
+  start,
+  end,
+  onChange,
+  onSubmitted,
+}: Props) {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  async function onFile(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    onChange({ code: text });
+  }
+
+  async function submit() {
+    setError(null);
+    if (!code.trim()) {
+      setError("Code is empty.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const base64 = btoa(unescape(encodeURIComponent(code)));
+      const res = await api.submitStrategy({
+        start,
+        end,
+        code: base64,
+        name: title.trim() || "submission.py",
+      });
+      if (res.status === "ERROR") {
+        setError(res.error?.errors?.join(", ") || "Submission failed");
+        return;
+      }
+      const hash = res.message;
+      if (hash) onSubmitted(hash, title.trim() || "submission.py");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Submission failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="main-content">
+      {error && <div className="message error">{error}</div>}
+
+      <div className="section">
+        <h3>File name</h3>
+        <div className="form-row" style={{ marginBottom: 0 }}>
+          <label>Title</label>
+          <input
+            type="text"
+            value={title}
+            placeholder="submission.py"
+            onChange={(e) => onChange({ title: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <div className="section">
+        <h3>Backtest range</h3>
+        <div className="row-flex">
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label>Start</label>
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => onChange({ start: e.target.value })}
+            />
+          </div>
+          <div className="form-row" style={{ marginBottom: 0 }}>
+            <label>End</label>
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => onChange({ end: e.target.value })}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="section" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 10,
+          }}
+        >
+          <h3 style={{ margin: 0 }}>Strategy code</h3>
+          <div className="row-flex">
+            <input
+              type="file"
+              ref={fileRef}
+              accept=".py,text/x-python,text/plain"
+              style={{ display: "none" }}
+              onChange={onFile}
+            />
+            <button onClick={() => fileRef.current?.click()}>Upload file</button>
+            <button className="primary" disabled={loading} onClick={submit}>
+              {loading ? <span className="spinner" /> : "Submit"}
+            </button>
+          </div>
+        </div>
+        <textarea
+          className="code-area"
+          placeholder="# Paste your strategy code here, or upload a .py file"
+          value={code}
+          onChange={(e) => onChange({ code: e.target.value })}
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
+}
